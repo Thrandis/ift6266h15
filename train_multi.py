@@ -29,12 +29,13 @@ Parser.add_argument('--width', type=int, default=124)
 Parser.add_argument('--height', type=int, default=124)
 Parser.add_argument('--batch_size', type=int, default=100)
 
+Parser.add_argument('--data_augmentation', type=bool, default=True)
 Parser.add_argument('--lr', type=float, default=0.001) # 0.001
-Parser.add_argument('--lr_decay', type=float, default=0.0001) # 0.00001
+Parser.add_argument('--lr_decay', type=float, default=0.00001) # 0.00001
 Parser.add_argument('--momentum_factor', type=float, default=0.9)
 Parser.add_argument('--L1_factor', type=float, default=0.0001)
 Parser.add_argument('--L2_factor', type=float, default=0.0001)
-Parser.add_argument('--stop_after', type=int, default=20)
+Parser.add_argument('--stop_after', type=int, default=30)
 
 Parser.add_argument('--arch', type=int, default=1)
 Parser.add_argument('--kw0', type=int, default=9)
@@ -45,7 +46,7 @@ Parser.add_argument('--pool1', type=int, default=2)
 Parser.add_argument('--nhu1', type=int, default=64)
 Parser.add_argument('--kw2', type=int, default=6)
 Parser.add_argument('--pool2', type=int, default=2)
-Parser.add_argument('--nhu2', type=int, default=64) # 20 
+Parser.add_argument('--nhu2', type=int, default=20) # 20 
 Parser.add_argument('--nhu3', type=int, default=1000)
 Parser.add_argument('--nhu4', type=int, default=500)
 
@@ -175,13 +176,13 @@ def prepare_batch(images, labels, params, action):
     x = np.zeros(params.batch_shape, dtype=floatX)
     t = np.zeros((params.batch_size, 2), dtype=floatX)
     # If training, fill batch with images that have been modified 
-    if action == 'train':
+    if action == 'train' and params.data_augmentation:
         for b, img in enumerate(images):
             # TODO CHECK HOW THE IMAGE MUST BE DISPOSED IN RAM FOR CONV NET !!
             x[b] = data_augmentation(img, params)
             t[b] = labels[b]
     # If valid or test, fill batch with resized and normalized images
-    elif action == 'valid':
+    else:
         for b, img in enumerate(images):
             image = resize(img, (params.height, params.width, 3))
             image = image.astype(floatX)
