@@ -140,29 +140,32 @@ def data_augmentation(image, params):
     # 1. Resize
     if np.random.rand(1)[0] > 0.2:
         # Randomly zoom
-        x = np.random.randint(params.height, params.height*1.2)
+        x = np.random.randint(params.height, params.height*1.2) - params.height
         image = resize(image, (params.height + x, params.width + x, 3))
         # Ranodmly crop
-        x, y = np.random.randint(0, x, 2)
-        image = image[x:params.height+x, y:params.width+y, :]
+        if x != 0:
+			x, y = np.random.randint(0, x, 2)
+			image = image[x:params.height+x, y:params.width+y, :]
     else:
         image = resize(image, (params.height, params.width, 3))
-    # 2. Rotate
-    if np.random.rand(1)[0] > 0.5:
-        image = rot(image)
-    # 3. Flip
+    # 2. Flip
     if np.random.rand(1)[0] > 0.5:
         image = flip(image)
-    # 4. Normalize
+    # 3. Normalize
     image = image.astype(floatX)
-    # 2. Equalize
+    # 4. Equalize
     image = RGB_variations(image, params.RGB_eig_val, params.RGB_eig_vec)
-    # 4. Add noise
+    # 5. Add noise
     if np.random.rand(1)[0] > 0.5:
         image = noise(image)
-    # 5. Remove mean
+    # 6. Rotate
+    if np.random.rand(1)[0] > 0.5:
+        image = rot(image)
+    else:
+		image = rot(image, 0)
+    # 7. Remove mean
     image = image - params.RGB_mean
-    # 6. Reshape for theano's convolutoins
+    # 8. Reshape for theano's convolutoins
     image = np.rollaxis(image, 2, 0)
     return image
 
