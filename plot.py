@@ -21,7 +21,7 @@ def plot_results(result_file):
     if max(t_miss) > 1:
         t_miss = [1 - x/100. for x in t_miss]
         v_miss = [1 - x/100. for x in v_miss]
-    plt.figure()
+    plt.figure(1)
     plt.plot(epochs, t_err, c='b', lw=2, label='Train')
     plt.grid()
     plt.plot(epochs, v_err, c='r', lw=2, label='Valid')
@@ -30,8 +30,9 @@ def plot_results(result_file):
     plt.xlabel('Epochs'), plt.ylabel('Criterion error')
     plt.title('Criterion Error')
     plt.savefig(os.path.join(out_dir, 'criterion_error.png'))
-   
-    plt.figure()
+    plt.clf()
+       
+    plt.figure(1)
     plt.plot(epochs, t_miss, c='b', lw=2, label='Train')
     plt.grid()
     plt.plot(epochs, v_miss, c='r', lw=2, label='Valid')
@@ -40,6 +41,7 @@ def plot_results(result_file):
     plt.xlabel('Epochs'), plt.ylabel('Missclassification')
     plt.title('Missclassification Rate')
     plt.savefig(os.path.join(out_dir, 'missclass_rate.png'))
+    plt.clf()
 
 xps = [os.path.join(xp_path, x) for x in os.listdir(xp_path) if x != 'logs']
 for xp in xps:

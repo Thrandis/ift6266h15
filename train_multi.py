@@ -8,6 +8,7 @@ import cPickle as pickle
 import numpy as np
 import tables as tb
 from skimage.transform import resize
+from skimage.color import rgb2grey
 
 import theano.tensor as T
 import theano
@@ -23,21 +24,35 @@ from dataset_augmentation import *
 
 Parser = argparse.ArgumentParser(description='GPU Experiment')
 Parser.add_argument('--db_path', default='/home/cesar/DB/dogs_vs_cats')
-Parser.add_argument('--xp_path', default='test3')
+Parser.add_argument('--xp_path', default='TEST')
 Parser.add_argument('--seed', type=int, default=77)
 Parser.add_argument('--width', type=int, default=124)
 Parser.add_argument('--height', type=int, default=124)
 Parser.add_argument('--batch_size', type=int, default=100)
+Parser.add_argument('--nepochs', type=int, default=1000)
 
-Parser.add_argument('--data_augmentation', type=bool, default=True)
-Parser.add_argument('--lr', type=float, default=0.001) # 0.001
-Parser.add_argument('--lr_decay', type=float, default=0.00001) # 0.00001
-Parser.add_argument('--momentum_factor', type=float, default=0.9)
-Parser.add_argument('--L1_factor', type=float, default=0.0001)
-Parser.add_argument('--L2_factor', type=float, default=0.0001)
-Parser.add_argument('--stop_after', type=int, default=30)
+Parser.add_argument('--data_augmentation', action='store_true', default=False)
+Parser.add_argument('--rotate', action='store_true', default=False)
+Parser.add_argument('--crop', action='store_true', default=False)
+Parser.add_argument('--noise', action='store_true', default=False)
+Parser.add_argument('--flip', action='store_true', default=False)
+Parser.add_argument('--equalize', action='store_true', default=False)
+Parser.add_argument('--grey', action='store_true', default=False)
 
-Parser.add_argument('--arch', type=int, default=1)
+Parser.add_argument('--lr', type=float, default=0.01) # 0.001
+Parser.add_argument('--lr_decay', type=float, default=0.0) #0.00001
+Parser.add_argument('--momentum_factor', type=float, default=0.0) #0.9
+Parser.add_argument('--NAG', action='store_true', default=False)
+Parser.add_argument('--L1_factor', type=float, default=0.0) #0.0001
+Parser.add_argument('--L2_factor', type=float, default=0.0) #0.0001
+Parser.add_argument('--stop_after', type=int, default=50)
+
+# TODO: Finish dropout
+Parser.add_argument('--dropout', action='store_true', default=False)
+Parser.add_argument('--drop_prob', type=float, default=0.5)
+Parser.add_argument('--drop_prob0', type=float, default=0.8)
+
+Parser.add_argument('--arch', type=int, default=None)
 Parser.add_argument('--kw0', type=int, default=9)
 Parser.add_argument('--pool0', type=int, default=2)
 Parser.add_argument('--nhu0', type=int, default=32)
@@ -47,8 +62,14 @@ Parser.add_argument('--nhu1', type=int, default=64)
 Parser.add_argument('--kw2', type=int, default=6)
 Parser.add_argument('--pool2', type=int, default=2)
 Parser.add_argument('--nhu2', type=int, default=20) # 20 
-Parser.add_argument('--nhu3', type=int, default=1000)
-Parser.add_argument('--nhu4', type=int, default=500)
+Parser.add_argument('--kw3', type=int, default=6)
+Parser.add_argument('--pool3', type=int, default=2)
+Parser.add_argument('--nhu3', type=int, default=20) # 20 
+Parser.add_argument('--kw4', type=int, default=6)
+Parser.add_argument('--pool4', type=int, default=2)
+Parser.add_argument('--nhu4', type=int, default=20) # 20 
+Parser.add_argument('--nhu5', type=int, default=20) # 20 
+Parser.add_argument('--nhu6', type=int, default=1000)
 
 params = Parser.parse_args()
 
@@ -65,18 +86,18 @@ floatX = theano.config.floatX
 np.random.seed(params.seed)
 
 # DB parameters
-params.TR_IDX = [0, 20000]  #  [0, 20000] # TODO: change
+params.TR_IDX = [0, 20000]
 params.VA_IDX = [20000, 22500]
 params.TE_IDX = [22500, 25000]
 params.db = os.path.join(params.db_path, 'train.h5')
 
 # Training parameters
-params.batch_shape = (params.batch_size, 3, params.height, params.width)
+if params.grey:
+    params.batch_shape = (params.batch_size, 1, params.height, params.width)
+else:
+    params.batch_shape = (params.batch_size, 3, params.height, params.width)
 
 # TODO experiment dir
-# Experiment parameters
-#if params.xp_path is None:
-#    s = 
 if not os.path.exists(params.xp_path):
     os.makedirs(params.xp_path)
 params.result_file = os.path.join(params.xp_path, 'results.txt')
@@ -115,30 +136,47 @@ def load_dataset(params, s):
             labels.append(one_hot_encode(x, 2))
         # Load the shapes of the images
         shapes = [x for x in f.root.Data.s.iterrows(idx[0], idx[1])]
-        # Extract randomly 100 pixels per image for PCA (data augmentation)
-        pixels = np.zeros((100*len(labels), 3), dtype=floatX)
-        c = 0
-        for i, x in enumerate(f.root.Data.X.iterrows(idx[0], idx[1])):
-            x = x.reshape((len(x)/3, 3))
-            for j in np.random.random_integers(0, len(x)/3, 100):
-                pixels[c] = x[j]
-                c += 1
-        l, v, m = RGB_PCA(pixels)
+        # Load the images
+        out_file = '%s_data_%d.bin' %(s, 1.3*params.height)
+        out_file = os.path.join(params.db_path, out_file)
+        if not os.path.exists(out_file):
+            images = np.zeros((idx[1]-idx[0],1.3*params.height, 1.3*params.height, 3),
+                              dtype=np.uint8)
+            for i, x in enumerate(f.root.Data.X.iterrows(idx[0], idx[1])):
+                x = x.reshape(shapes[i])
+                x = resize(x, (int(1.3*params.height), int(1.3*params.height), 3))
+                x = (x*256).astype(np.uint8)
+                images[i] = x
+            with open(out_file, 'wb') as ff:
+                images.tofile(ff)
+        else:
+            with open(out_file, 'rb') as ff:
+                images = np.fromfile(ff, dtype=np.uint8)
+                shape = (idx[1]-idx[0], 1.3*params.height, 1.3*params.height, 3)
+                images = images.reshape(shape)
+    # Prepare RGB PCA (for contrast data augmentation)
+    if s == 'train':
+        l, v, m = RGB_PCA(images)
         params.RGB_eig_val = l
         params.RGB_eig_vec = v
         params.RGB_mean = m
-        del pixels
-        # Load the images
-        images = []
-        for i, x in enumerate(f.root.Data.X.iterrows(idx[0], idx[1])):
-            x = x.reshape(shapes[i])
-            images.append(x)
     return images, labels
 
 
+def random_crop(image):
+    x = np.random.randint(221, 256)
+    image = resize(image, (x, x, 3))
+    if x != 221:
+        x, y = np.random.randint(0, 256-x)
+        image = image[x:221+x, y:221+y, :]
+    image = image.astype(floatX)
+    image = np.rollaxis(image, 2, 0)
+    return image
+
+
 def data_augmentation(image, params):
-    # 1. Resize
-    if np.random.rand(1)[0] > 0.2:
+    # 1. Resize and crop
+    if params.crop:
         # Randomly zoom
         x = np.random.randint(params.height, params.height*1.2) - params.height
         image = resize(image, (params.height + x, params.width + x, 3))
@@ -148,24 +186,30 @@ def data_augmentation(image, params):
 			image = image[x:params.height+x, y:params.width+y, :]
     else:
         image = resize(image, (params.height, params.width, 3))
-    # 2. Flip
-    if np.random.rand(1)[0] > 0.5:
+    # Flip
+    if params.flip and np.random.rand(1)[0] > 0.5:
         image = flip(image)
-    # 3. Normalize
+    # Normalize
     image = image.astype(floatX)
-    # 4. Equalize
-    image = RGB_variations(image, params.RGB_eig_val, params.RGB_eig_vec)
-    # 5. Add noise
-    if np.random.rand(1)[0] > 0.5:
+    # Equalize
+    if params.equalize:
+        image = RGB_variations(image, params.RGB_eig_val, params.RGB_eig_vec)
+    # To greyscale
+    if params.grey:
+        image = rgb2grey(image)
+    # Add noise
+    if params.noise:
         image = noise(image)
-    # 6. Rotate
-    if np.random.rand(1)[0] > 0.5:
+    # Rotate
+    if params.rotate:
         image = rot(image)
     else:
 		image = rot(image, 0)
-    # 7. Remove mean
-    image = image - params.RGB_mean
-    # 8. Reshape for theano's convolutoins
+    # Remove mean
+    image = image - params.RGB_mean # TODO 
+    # Reshape for theano's convolutoins
+    if params.grey:
+        image = image.reshape(params.height, params.width, 1)
     image = np.rollaxis(image, 2, 0)
     return image
 
@@ -181,7 +225,6 @@ def prepare_batch(images, labels, params, action):
     # If training, fill batch with images that have been modified 
     if action == 'train' and params.data_augmentation:
         for b, img in enumerate(images):
-            # TODO CHECK HOW THE IMAGE MUST BE DISPOSED IN RAM FOR CONV NET !!
             x[b] = data_augmentation(img, params)
             t[b] = labels[b]
     # If valid or test, fill batch with resized and normalized images
@@ -189,7 +232,10 @@ def prepare_batch(images, labels, params, action):
         for b, img in enumerate(images):
             image = resize(img, (params.height, params.width, 3))
             image = image.astype(floatX)
-            image = image - params.RGB_mean
+            if params.grey:
+                image = rgb2grey(image)
+                image = image.reshape(params.height, params.width, 1)
+            image = image - params.RGB_mean # TODO
             x[b] = np.rollaxis(image, 2, 0)
             t[b] = labels[b]
     prepare_batch.queue.put((x, t))
@@ -202,7 +248,7 @@ def one_epoch(images, labels, net, pool, queue, params, action):
     workers = []
     for i in xrange(nbatches):
         indices = idx[i*params.batch_size:(1+i)*params.batch_size]
-        imgs = [images[j] for j in indices]
+        imgs = [images[j].copy() for j in indices]
         labs = [labels[j] for j in indices]
         worker = pool.apply_async(prepare_batch, 
                                   args=(imgs, labs, params, action))
@@ -213,6 +259,8 @@ def one_epoch(images, labels, net, pool, queue, params, action):
     counter = 0    
     while True:
         x, t = queue.get()
+        if params.dropout:
+            drop(net, action, p=params.drop_prob, p0=params.drop_prob0)
         if action == 'train':
             L, M = net.train(x, t, params.lr)
         elif action == 'valid':
@@ -224,7 +272,6 @@ def one_epoch(images, labels, net, pool, queue, params, action):
             break
     err /= nbatches
     miss /= nbatches
-    # TODO: assert that all workers have finished their job and the queue is empty
     counter = 0
     for worker in workers:
         if worker.ready():
@@ -263,7 +310,7 @@ network = create_network(params)
 print('Done!')
 
 # Prepare Pool and Queue
-queue = Queue(6)
+queue = Queue(20)
 pool = Pool(3, pool_init, [queue]) 
 
 # Loading dataset
@@ -274,15 +321,17 @@ print('Done!')
 
 # Training loop
 print('Training Loop')
-for epoch in range(1000):
-    
+for epoch in range(params.nepochs):
     # Performing train and valid epoch
     t = time.time()
     t_err, t_miss = one_epoch(train_images, train_labels, network, 
                               pool, queue, params, 'train')
     v_err, v_miss = one_epoch(valid_images, valid_labels, network, 
                               pool, queue, params, 'valid')
-    
+
+    # DEBUG TODO
+    #print network.layers[7].get_bias().get_value()
+
     # Saving model
     save_model(network, epoch, params, t_err, t_miss, v_err, v_miss)
     
@@ -321,9 +370,7 @@ with open(params.best_net_file, 'rb') as f:
 # TODO: replace this ugly hack
 network.train, network.predict = network._compile_net(network.layers,
                                                       network.criterion,
-                                                      params.momentum_factor,
-                                                      params.L1_factor,
-                                                      params.L2_factor)
+                                                      params)
 
 print('Testing Loop')
 test_err, test_miss = one_epoch(test_images, test_labels, network,
