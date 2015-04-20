@@ -330,6 +330,80 @@ def create_network(params):
         crit = NLLCriterion()
         network = Net(layers, crit, params)
         return network
+    elif params.arch == 9:
+        """Same as 8 with batch norm""" 
+        layers = []
+        if params.grey:
+            x = 1
+        else:
+            x = 3
+        layers.append(ConvPool(x, params.nhu0,
+                               params.kw0, params.kw0,
+                               1, 1,
+                               w_init=None, b_init=0.01,
+                               dropout=params.dropout)) #0.01
+        layers.append(BatchNorm(params.nhu0))
+        layers.append(ReLU())
+        layers.append(ConvPool(params.nhu0, params.nhu0,
+                               params.kw0, params.kw0,
+                               params.pool0, params.pool0,
+                               w_init=None, b_init=0.01,
+                               dropout=params.dropout)) #0.01
+        layers.append(BatchNorm(params.nhu0))
+        layers.append(ReLU())
+        layers.append(ConvPool(params.nhu0, params.nhu1,
+                               params.kw1, params.kw1,
+                               1, 1,
+                               w_init=None, b_init=0.01,
+                               dropout=params.dropout))
+        layers.append(BatchNorm(params.nhu1))
+        layers.append(ReLU())
+        layers.append(ConvPool(params.nhu1, params.nhu1,
+                               params.kw1, params.kw1,
+                               params.pool1, params.pool1,
+                               w_init=None, b_init=0.01,
+                               dropout=params.dropout))
+        layers.append(BatchNorm(params.nhu1))
+        layers.append(ReLU())
+        layers.append(ConvPool(params.nhu1, params.nhu2,
+                               params.kw2, params.kw2,
+                               1, 1,
+                               w_init=None, b_init=0.01,
+                               dropout=params.dropout))
+        layers.append(BatchNorm(params.nhu2))
+        layers.append(ReLU())
+        layers.append(ConvPool(params.nhu2, params.nhu2,
+                               params.kw2, params.kw2,
+                               params.pool2, params.pool2,
+                               w_init=None, b_init=0.01,
+                               dropout=params.dropout))
+        layers.append(BatchNorm(params.nhu2))
+        layers.append(ReLU())
+        layers.append(ConvPool(params.nhu2, params.nhu3,
+                               params.kw3, params.kw3,
+                               1, 1,
+                               w_init=None, b_init=0.01,
+                               dropout=params.dropout))
+        layers.append(BatchNorm(params.nhu3))
+        layers.append(ReLU())
+        layers.append(ConvPool(params.nhu3, params.nhu3,
+                               params.kw3, params.kw3,
+                               params.pool3, params.pool3,
+                               w_init=None, b_init=0.01,
+                               dropout=params.dropout))
+        layers.append(BatchNorm(params.nhu3))
+        layers.append(ReLU())
+        layers.append(Flatten())
+        layers.append(Linear(params.nhu3, params.nhu4, w_init=None, b_init=0.01,
+                             dropout=params.dropout))
+        layers.append(BatchNorm(params.nhu4))
+        layers.append(ReLU())
+        layers.append(Linear(params.nhu4, 2, w_init=None, b_init=0.0,
+                             dropout=params.dropout))
+        layers.append(Softmax())
+        crit = NLLCriterion()
+        network = Net(layers, crit, params)
+        return network
     elif params.arch == 99: # For Alex: To compare with Pylearn2
         layers = []
         layers.append(ConvPool(3, 32, 4, 4, 2, 2, w_init=0.1))

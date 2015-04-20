@@ -123,9 +123,11 @@ class Flatten(Layer):
 
 
 class BatchNorm(Layer):
+    """From https://github.com/benanne/Lasagne/issues/141"""
 
-    def __init__(self, in_size, epsilon=1e-6):
+    def __init__(self, in_size, epsilon=1e-6, alpha=0.5):
         self.epsilon = epsilon
+        self.alpha = alpha
         gamma_val = np.ones(in_size, dtype=floatX)
         self.gamma = theano.shared(name='gamma', value=gamma_val)
         beta_val = np.zeros(in_size, dtype=floatX)
@@ -164,15 +166,17 @@ class BatchNorm(Layer):
             raise NotImplementedError
     
     def get_inf_updates(self):
-        return [(self.means, self.symb_means),
-                (self.variances, self.symb_variances)]
+        """From https://gist.github.com/f0k/f1a6bd3c8585c400c190"""
+        means_upd = (1 - self.alpha) * self.means + self.alpha*self.symb_means
+        vars_upd = (1 - self.alpha) * self.variances + self.alpha*self.symb_variances
+        return [(self.means, means_upd),
+                (self.variances, vars_upd)]
 
     def get_weights(self):
         return self.gamma
 
     def get_bias(self):
         return self.beta
-
 
 class ConvPool(Layer):
 
